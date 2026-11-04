@@ -95,6 +95,11 @@
   }
   .panel h3{font-size:16px; margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--line-soft);}
   .grid2{display:grid; grid-template-columns:1.3fr 1fr; gap:20px;}
+  .topper-panel{grid-column:1/-1;}
+  .dash-filterbar{margin-bottom:18px;}
+  .bulk-actions{display:flex; gap:5px; margin-top:5px;}
+  .bulk-actions .btn{padding:4px 8px; font-size:10.5px;}
+  .csv-status{font-size:11.5px; color:var(--good); margin-top:6px;}
   .grid2b{display:grid; grid-template-columns:1fr 1fr; gap:20px;}
   @media (max-width:900px){.grid2,.grid2b{grid-template-columns:1fr;}}
 
@@ -267,6 +272,18 @@
   <div class="view active" id="view-dashboard">
     <div class="stat-row" id="dash-stats"></div>
 
+    <div class="filterbar dash-filterbar">
+      <div class="fgroup">
+        <label>Category filter</label>
+        <select id="dashCategoryFilter"><option value="">All categories</option></select>
+      </div>
+      <div class="fgroup">
+        <label>Service filter</label>
+        <select id="dashServiceFilter"><option value="">All services</option></select>
+      </div>
+      <div class="fgroup"><label>&nbsp;</label><button class="btn ghost small" id="dashClearFilters">Clear dashboard filters</button></div>
+    </div>
+
     <div class="grid2">
       <div class="panel">
         <h3>Candidates recommended, by year</h3>
@@ -279,7 +296,7 @@
     </div>
 
     <div class="grid2">
-      <div class="panel">
+      <div class="panel topper-panel">
         <h3>AIR&nbsp;1 (topper) final score, year on year</h3>
         <div class="chart-host" id="chartTopper"></div>
       </div>
@@ -317,14 +334,17 @@
       <div class="fgroup">
         <label>Years</label>
         <div class="chip-set" id="yearChips"></div>
+        <div class="bulk-actions"><button class="btn ghost" id="yearSelectAll">Select all</button><button class="btn ghost" id="yearDeselectAll">Deselect all</button></div>
       </div>
       <div class="fgroup">
         <label>Category</label>
         <div class="chip-set" id="commChips"></div>
+        <div class="bulk-actions"><button class="btn ghost" id="commSelectAll">Select all</button><button class="btn ghost" id="commDeselectAll">Deselect all</button></div>
       </div>
       <div class="fgroup">
         <label>Service allocated <span id="svcLegendToggle" style="cursor:pointer; text-decoration:underline; text-transform:none; letter-spacing:0; font-weight:400;">(glossary)</span></label>
         <div class="chip-set" id="serviceChips" style="max-width:340px; max-height:90px; overflow-y:auto;"></div>
+        <div class="bulk-actions"><button class="btn ghost" id="serviceSelectAll">Select all</button><button class="btn ghost" id="serviceDeselectAll">Deselect all</button></div>
       </div>
       <div class="fgroup">
         <label>Rank (AIR) range</label>
@@ -441,7 +461,7 @@
         <div class="fgroup"><label>From</label><select id="pqFrom"></select></div>
         <div class="fgroup"><label>To</label><select id="pqTo"></select></div>
         <div class="fgroup"><label>Trend subject</label><select id="pqSubjSel"></select></div>
-        <button class="btn small" id="pqImportBtn">Import pasted CSV</button>
+        <button class="btn small" id="pqImportBtn">Import pasted CSV</button><span class="csv-status" id="pqCsvStatus">CSV data loaded from UPSC_Prelims_Weightage_2011_2025.csv</span>
         <button class="btn small ghost" id="pqResetBtn">Clear table</button>
       </div>
       <textarea class="pq-in" id="pqCsv" rows="3" placeholder="Year,Polity,History,Geography,..."></textarea>
@@ -644,6 +664,20 @@ SERVICES.concat(['\u2014']).forEach(sv=>{
   });
   serviceChips.appendChild(c);
 });
+function setChipGroup(containerId, stateSet, allValues, onRender){
+  stateSet.clear(); allValues.forEach(v=>stateSet.add(v));
+  document.querySelectorAll('#'+containerId+' .chip').forEach(c=>c.classList.add('on')); state.page=0; onRender();
+}
+function clearChipGroup(containerId, stateSet, onRender){
+  stateSet.clear(); document.querySelectorAll('#'+containerId+' .chip').forEach(c=>c.classList.remove('on')); state.page=0; onRender();
+}
+document.getElementById('yearSelectAll').onclick=()=>setChipGroup('yearChips',state.years,YEARS,renderExplorer);
+document.getElementById('yearDeselectAll').onclick=()=>clearChipGroup('yearChips',state.years,renderExplorer);
+document.getElementById('commSelectAll').onclick=()=>setChipGroup('commChips',state.comms,COMMS,renderExplorer);
+document.getElementById('commDeselectAll').onclick=()=>clearChipGroup('commChips',state.comms,COMMS,renderExplorer);
+document.getElementById('serviceSelectAll').onclick=()=>setChipGroup('serviceChips',state.services,SERVICES.concat(['—']),renderExplorer);
+document.getElementById('serviceDeselectAll').onclick=()=>clearChipGroup('serviceChips',state.services,renderExplorer);
+
 document.getElementById('svcLegendToggle').addEventListener('click', ()=>{
   const p = document.getElementById('svcLegendPanel');
   const showing = p.style.display !== 'none';
@@ -944,7 +978,7 @@ function drawLineChart(hostId, labels, values, opts){
   host.innerHTML = '';
   const valid = values.filter(v=>v!=null);
   if(!valid.length){ host.innerHTML = '<div class="empty-chart">No data for this selection.</div>'; return; }
-  const W = 620, H = 240, padL = 46, padR = 16, padT = 20, padB = 34;
+  const W = 620, H = opts.height || 240, padL = 46, padR = 16, padT = 20, padB = 34;
   const innerW = W-padL-padR, innerH = H-padT-padB;
   const minV = Math.min(...valid), maxV = Math.max(...valid);
   const lo = Math.floor((minV-10)/10)*10, hi = Math.ceil((maxV+10)/10)*10;
@@ -1009,105 +1043,74 @@ function drawDonut(hostId, labels, values, colors){
 }
 
 /* ================= DASHBOARD ================= */
+function getDashboardRows(){
+  const cat=document.getElementById('dashCategoryFilter')?.value||'';
+  const svc=document.getElementById('dashServiceFilter')?.value||'';
+  return DATA.filter(d=>(!cat||d.comm===cat)&&(!svc||d.service===svc));
+}
+function populateDashboardFilters(){
+  const cs=document.getElementById('dashCategoryFilter'), ss=document.getElementById('dashServiceFilter');
+  if(!cs||!ss) return;
+  const cv=cs.value, sv=ss.value;
+  cs.innerHTML='<option value="">All categories</option>'+COMMS.map(c=>`<option value="${c}">${COMM_LABEL[c]}</option>`).join('');
+  ss.innerHTML='<option value="">All services</option>'+SERVICES.map(x=>`<option value="${x}">${x}${SERVICE_LABEL[x]?' — '+SERVICE_LABEL[x]:''}</option>`).join('');
+  if(COMMS.includes(cv)) cs.value=cv; if(SERVICES.includes(sv)) ss.value=sv;
+}
 function renderDashboard(){
-  const total = DATA.length;
-  const repeats = [...byName.values()].filter(a=>a.length>1).length;
-  const latestYear = YEARS[YEARS.length-1];
-  const latestCount = DATA.filter(d=>d.yr===latestYear).length;
-  const scoreVals = DATA.map(d=>d.ft).filter(Number.isFinite); const avgFinal = scoreVals.length ? Math.round(scoreVals.reduce((s,v)=>s+v,0)/scoreVals.length) : null;
-
-  document.getElementById('dash-stats').innerHTML = `
-    <div class="stat"><div class="n">${total.toLocaleString()}</div><div class="l">Records in register, 2005&ndash;2025</div></div>
+  populateDashboardFilters();
+  const filtered=getDashboardRows();
+  const total=filtered.length, repeats=[...byName.values()].filter(a=>a.some(x=>filtered.includes(x))&&a.length>1).length;
+  const latestYear=YEARS[YEARS.length-1], latestCount=filtered.filter(d=>d.yr===latestYear).length;
+  const scoreVals=filtered.map(d=>d.ft).filter(Number.isFinite);
+  const avgFinal=scoreVals.length?Math.round(scoreVals.reduce((s,v)=>s+v,0)/scoreVals.length):null;
+  document.getElementById('dash-stats').innerHTML=`
+    <div class="stat"><div class="n">${total.toLocaleString()}</div><div class="l">Records matching dashboard filters</div></div>
     <div class="stat"><div class="n">${YEARS.length}</div><div class="l">Years covered</div></div>
     <div class="stat"><div class="n">${latestCount}</div><div class="l">Recommended in ${latestYear}</div></div>
     <div class="stat"><div class="n">${repeats}</div><div class="l">Names appearing in 2+ years</div></div>
-    <div class="stat"><div class="n">${avgFinal}</div><div class="l">Average final score (all years)</div></div>
-  `;
+    <div class="stat"><div class="n">${avgFinal??'—'}</div><div class="l">Average final score</div></div>`;
 
-  // bar: candidates per year
-  const perYear = YEARS.map(y=>DATA.filter(d=>d.yr===y).length);
-  drawBarChart('chartYear', YEARS, perYear, {color:'#8c2f39'});
-
-  // pie: category distribution
-  const commCounts = COMMS.map(c=>DATA.filter(d=>d.comm===c).length);
-  drawDonut('chartCategory', COMMS.map(c=>COMM_LABEL[c]), commCounts, ['#8c2f39','#3f6b4a','#a9822f','#2c3f60','#6b6455']);
-
-  // line: topper score per year
-  const topperScores = YEARS.map(y=>{
-    const rows = DATA.filter(d=>d.yr===y && d.rank===1);
-    return rows.length ? rows[0].ft : null;
-  });
-  drawLineChart('chartTopper', YEARS, topperScores);
-
-  renderHeatmap();
-  buildHistYearSelect();
-  renderHistogram();
-
-  // top services bar chart
-  const svcCounts = {};
-  DATA.forEach(d=>{ if(d.service) svcCounts[d.service] = (svcCounts[d.service]||0)+1; });
-  const svcSorted = Object.entries(svcCounts).sort((a,b)=>b[1]-a[1]).slice(0,12);
-  drawBarChart('chartServices', svcSorted.map(x=>x[0]), svcSorted.map(x=>x[1]), {color:'#a9822f'});
+  const perYear=YEARS.map(y=>filtered.filter(d=>d.yr===y).length);
+  drawBarChart('chartYear',YEARS,perYear,{color:'#8c2f39'});
+  const allCounts=COMMS.map(c=>DATA.filter(d=>d.comm===c).length);
+  drawDonut('chartCategory',COMMS.map(c=>COMM_LABEL[c]),allCounts,['#8c2f39','#3f6b4a','#a9822f','#2c3f60','#6b6455']);
+  const topperScores=YEARS.map(y=>{const rows=filtered.filter(d=>d.yr===y&&d.rank===1);return rows.length?rows[0].ft:null;});
+  drawLineChart('chartTopper',YEARS,topperScores,{height:360});
+  renderHeatmap(filtered);
+  buildHistYearSelect(); renderHistogram();
+  const svcCounts={}; filtered.forEach(d=>{if(d.service)svcCounts[d.service]=(svcCounts[d.service]||0)+1;});
+  const svcSorted=Object.entries(svcCounts).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  drawBarChart('chartServices',svcSorted.map(x=>x[0]),svcSorted.map(x=>x[1]),{color:'#a9822f'});
 }
-
-function renderHeatmap(){
-  const host = document.getElementById('heatmapHost');
-  const counts = {};
-  let max = 0;
-  COMMS.forEach(c=>{
-    counts[c] = YEARS.map(y=>{
-      const n = DATA.filter(d=>d.yr===y && d.comm===c).length;
-      if(n>max) max=n;
-      return n;
-    });
-  });
-  function color(n){
-    if(n===0) return '#eee7d4';
-    const t = n/max;
-    const r = Math.round(28 + t*(140-28));
-    const g = Math.round(43 + t*(47-43));
-    const b = Math.round(69 + t*(57-69));
-    return `rgb(${r},${g},${b})`;
-  }
-  let html = '<table class="heat-table"><thead><tr><th></th>'+YEARS.map(y=>`<th>${y}</th>`).join('')+'</tr></thead><tbody>';
-  COMMS.forEach(c=>{
-    html += `<tr><td class="heat-row-label">${COMM_LABEL[c]}</td>`;
-    counts[c].forEach(n=>{
-      html += `<td><div class="heat-cell" style="background:${color(n)}">${n||''}</div></td>`;
-    });
-    html += '</tr>';
-  });
-  html += '</tbody></table>';
-  host.innerHTML = html;
+function renderHeatmap(rows=DATA){
+  const host=document.getElementById('heatmapHost'), counts={}; let max=0;
+  COMMS.forEach(c=>{counts[c]=YEARS.map(y=>{const n=rows.filter(d=>d.yr===y&&d.comm===c).length;if(n>max)max=n;return n;});});
+  function color(n){if(n===0||!max)return '#eee7d4';const t=n/max;return `rgb(${Math.round(28+t*(140-28))},${Math.round(43+t*(47-43))},${Math.round(69+t*(57-69))})`;}
+  let html='<table class="heat-table"><thead><tr><th></th>'+YEARS.map(y=>`<th>${y}</th>`).join('')+'</tr></thead><tbody>';
+  COMMS.forEach(c=>{html+=`<tr><td class="heat-row-label">${COMM_LABEL[c]}</td>`;counts[c].forEach(n=>{html+=`<td><div class="heat-cell" style="background:${color(n)}">${n||''}</div></td>`;});html+='</tr>';});
+  host.innerHTML=html+'</tbody></table>';
 }
-
 function buildHistYearSelect(){
-  const sel = document.getElementById('histYearSelect');
-  if(sel.options.length) return;
-  YEARS.slice().reverse().forEach(y=>{
-    const o = document.createElement('option'); o.value=y; o.textContent=y; sel.appendChild(o);
-  });
-  sel.addEventListener('change', renderHistogram);
+  const sel=document.getElementById('histYearSelect');
+  if(sel.options.length)return;
+  YEARS.slice().reverse().forEach(y=>{const o=document.createElement('option');o.value=y;o.textContent=y;sel.appendChild(o);});
+  sel.addEventListener('change',renderHistogram);
 }
 function renderHistogram(){
-  const y = +document.getElementById('histYearSelect').value || YEARS[YEARS.length-1];
-  const rows = DATA.filter(d=>d.yr===y);
-  const min = Math.min(...rows.map(d=>d.ft));
-  const max = Math.max(...rows.map(d=>d.ft));
-  const bins = 14;
-  const width = (max-min)/bins || 1;
-  const counts = new Array(bins).fill(0);
-  rows.forEach(d=>{
-    let idx = Math.floor((d.ft-min)/width);
-    if(idx>=bins) idx=bins-1;
-    if(idx<0) idx=0;
-    counts[idx]++;
-  });
-  const labels = counts.map((_,i)=> Math.round(min+i*width) + '\u2013' + Math.round(min+(i+1)*width));
-  drawBarChart('chartHist', labels, counts, {color:'#2c3f60'});
+  const y=+document.getElementById('histYearSelect').value||YEARS[YEARS.length-1];
+  const rows=getDashboardRows().filter(d=>d.yr===y&&Number.isFinite(d.ft));
+  if(!rows.length){drawBarChart('chartHist',[],[],{});return;}
+  const min=Math.min(...rows.map(d=>d.ft)), max=Math.max(...rows.map(d=>d.ft)), bins=14, width=(max-min)/bins||1, counts=new Array(bins).fill(0);
+  rows.forEach(d=>{let idx=Math.floor((d.ft-min)/width);if(idx>=bins)idx=bins-1;if(idx<0)idx=0;counts[idx]++;});
+  const labels=counts.map((_,i)=>Math.round(min+i*width)+'–'+Math.round(min+(i+1)*width));
+  drawBarChart('chartHist',labels,counts,{color:'#2c3f60'});
 }
 
 /* ================= INIT ================= */
+populateDashboardFilters();
+document.getElementById('dashCategoryFilter').addEventListener('change',renderDashboard);
+document.getElementById('dashServiceFilter').addEventListener('change',renderDashboard);
+document.getElementById('dashClearFilters').addEventListener('click',()=>{document.getElementById('dashCategoryFilter').value='';document.getElementById('dashServiceFilter').value='';renderDashboard();});
 renderDashboard();
 renderExplorer();
 </script>
@@ -1171,7 +1174,7 @@ renderExplorer();
   // ---- Subject projection ----
   let sub = ld('pqSub', {});
   function renderSub(){
-    const avg = averages(YRS[0],YRS[YRS.length-1]);
+    const avg = SUBJ.map(s=>{ const i=PYQ_SUBJ.indexOf(s); return i>=0 ? averages(YRS[0],YRS[YRS.length-1])[i] : null; });
     let h='<tr><th>Subject</th><th>PYQ avg</th><th>Attempt</th><th>Correct</th><th>Wrong</th><th>Marks</th><th>Accuracy</th></tr>';
     SUBJ.forEach((s,i)=>{ const v=sub[i]||[0,0];
       h+=`<tr><td class="l">${s}</td><td>${avg[i]==null?'&ndash;':avg[i].toFixed(1)}</td><td><input type="number" min="0" data-i="${i}" data-k="0" value="${v[0]||''}"></td><td><input type="number" min="0" data-i="${i}" data-k="1" value="${v[1]||''}"></td><td id="sw${i}"></td><td id="sm${i}"></td><td id="sa${i}"></td></tr>`; });
@@ -1193,40 +1196,46 @@ renderExplorer();
   }
 
   // ---- PYQ weightage ----
-  let W = ld('pqW', {});
+  // Embedded from the uploaded UPSC_Prelims_Weightage_2011_2025.csv (2011–2025).
+  const PYQ_SUBJ = ['Polity','History & Culture','Geography','Economy','Environment & Ecology','Science & Tech','Current Affairs & Misc'];
+  const PYQ_SHORT = ['Polity','History & Culture','Geography','Economy','Environment & Ecology','Science & Tech','Current Affairs & Misc'];
+  const PYQ_CSV_DATA = {
+    2011:[12,11,11,19,15,19,13],2012:[17,17,14,17,17,9,9],2013:[16,15,14,19,17,14,5],2014:[11,17,10,10,18,16,18],
+    2015:[13,14,14,13,11,8,27],2016:[7,15,7,18,18,8,27],2017:[22,14,7,15,11,9,22],2018:[13,21,8,18,13,13,14],
+    2019:[15,15,14,14,21,7,14],2020:[17,20,10,15,10,10,18],2021:[14,20,10,15,15,12,14],2022:[13,16,12,17,17,14,11],
+    2023:[15,14,16,14,14,12,15],2024:[18,11,14,16,14,11,16],2025:[15,14,12,16,15,13,15]
+  };
+  let W = ld('pqW', null);
+  if(!W || Object.keys(W).length===0 || !Object.values(W).some(r=>Array.isArray(r)&&r.some(v=>v!=null))){ W=JSON.parse(JSON.stringify(PYQ_CSV_DATA)); sv('pqW',W); }
   function rowTot(y){ return (W[y]||[]).reduce((a,b)=>a+(+b||0),0); }
-  function averages(from,to){
-    const ys=YRS.filter(y=>y>=from&&y<=to&&rowTot(y)>0);
-    return SUBJ.map((_,i)=> ys.length? ys.reduce((a,y)=>a+(+(W[y]||[])[i]||0),0)/ys.length : null);
-  }
-  ['pqFrom','pqTo'].forEach((id,k)=>{ YRS.forEach(y=>$(id).add(new Option(y,y))); $(id).value = k? YRS[YRS.length-1]:YRS[0]; $(id).onchange=renderCharts; });
-  SUBJ.forEach((s,i)=>$('pqSubjSel').add(new Option(s,i))); $('pqSubjSel').onchange=renderCharts;
+  function averages(from,to){ const ys=YRS.filter(y=>y>=from&&y<=to&&rowTot(y)>0); return PYQ_SUBJ.map((_,i)=>ys.length?ys.reduce((a,y)=>a+(+(W[y]||[])[i]||0),0)/ys.length:null); }
+  ['pqFrom','pqTo'].forEach((id,k)=>{ YRS.forEach(y=>$(id).add(new Option(y,y))); $(id).value=k?YRS[YRS.length-1]:YRS[0]; $(id).onchange=renderCharts; });
+  PYQ_SUBJ.forEach((s,i)=>$('pqSubjSel').add(new Option(s,i))); $('pqSubjSel').onchange=renderCharts;
   function renderW(){
-    let h='<tr><th>Year</th>'+SHORT.map(s=>`<th>${s}</th>`).join('')+'<th>Total</th></tr>';
-    YRS.forEach(y=>{ const r=W[y]||[]; h+=`<tr id="wr${y}"><td class="l">${y}</td>`+SUBJ.map((_,i)=>`<td><input type="number" min="0" data-y="${y}" data-i="${i}" value="${r[i]??''}"></td>`).join('')+`<td class="tot" id="wt${y}"></td></tr>`; });
-    h+='<tfoot><tr><td class="l">Average</td>'+SUBJ.map((_,i)=>`<td id="wa${i}"></td>`).join('')+'<td></td></tr></tfoot>';
+    let h='<tr><th>Year</th>'+PYQ_SHORT.map(s=>`<th>${s}</th>`).join('')+'<th>Total</th></tr>';
+    YRS.forEach(y=>{const r=W[y]||[];h+=`<tr id="wr${y}"><td class="l">${y}</td>`+PYQ_SUBJ.map((_,i)=>`<td><input type="number" min="0" data-y="${y}" data-i="${i}" value="${r[i]??''}"></td>`).join('')+`<td class="tot" id="wt${y}"></td></tr>`;});
+    h+='<tfoot><tr><td class="l">Average</td>'+PYQ_SUBJ.map((_,i)=>`<td id="wa${i}"></td>`).join('')+'<td></td></tr></tfoot>';
     $('pqW').innerHTML=h;
-    $('pqW').querySelectorAll('input').forEach(inp=>inp.oninput=()=>{ const y=inp.dataset.y; W[y]=W[y]||[]; W[y][inp.dataset.i]=inp.value===''?null:Math.max(0,+inp.value); sv('pqW',W); renderCharts(); renderSub(); });
+    $('pqW').querySelectorAll('input').forEach(inp=>inp.oninput=()=>{const y=inp.dataset.y;W[y]=W[y]||[];W[y][inp.dataset.i]=inp.value===''?null:Math.max(0,+inp.value);sv('pqW',W);renderCharts();});
     renderCharts();
   }
   function renderCharts(){
-    YRS.forEach(y=>{ const t=rowTot(y), c=$('wt'+y); c.textContent=t||''; $('wr'+y).className = t&&t!==100?'warn':''; c.title=t&&t!==100?'Row should total 100':''; });
-    const from=+$('pqFrom').value, to=+$('pqTo').value, avg=averages(from,to);
-    avg.forEach((v,i)=>$('wa'+i).textContent = v==null?'':v.toFixed(1));
-    drawBarChart('pqAvgChart', SHORT, avg.map(v=>v==null?0:Math.round(v*10)/10), {color:'#8c2f39'});
-    const si=+$('pqSubjSel').value, ys=YRS.filter(y=>y>=from&&y<=to);
-    drawLineChart('pqTrendChart', ys.map(String), ys.map(y=>rowTot(y)>0?(+(W[y]||[])[si]||0):null), {});
+    YRS.forEach(y=>{const t=rowTot(y),c=$('wt'+y);c.textContent=t||'';$('wr'+y).className=t&&t!==100?'warn':'';c.title=t&&t!==100?'Row should total 100':'';});
+    const from=+$('pqFrom').value,to=+$('pqTo').value,avg=averages(from,to);avg.forEach((v,i)=>$('wa'+i).textContent=v==null?'':v.toFixed(1));
+    drawBarChart('pqAvgChart',PYQ_SHORT,avg.map(v=>v==null?0:Math.round(v*10)/10),{color:'#8c2f39'});
+    const si=+$('pqSubjSel').value,ys=YRS.filter(y=>y>=from&&y<=to);drawLineChart('pqTrendChart',ys.map(String),ys.map(y=>rowTot(y)>0?(+(W[y]||[])[si]||0):null),{});
   }
   $('pqImportBtn').onclick=()=>{
     const lines=$('pqCsv').value.trim().split(/\r?\n/).filter(Boolean); if(lines.length<2) return;
-    const hdr=lines[0].split(',').map(s=>s.trim().toLowerCase());
-    const idx=SUBJ.map((s,i)=>hdr.findIndex(h=>h===s.toLowerCase()||h===SHORT[i].toLowerCase()||h.startsWith(s.split(/[ &/]/)[0].toLowerCase())));
-    lines.slice(1).forEach(l=>{ const c=l.split(',').map(s=>s.trim()), y=+c[0]; if(!YRS.includes(y)) return;
-      W[y]=SUBJ.map((_,i)=> idx[i]>=0 && c[idx[i]]!=='' ? (+c[idx[i]]||0) : null); });
-    sv('pqW',W); renderW(); renderSub();
+    const parseLine=line=>{const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){if(q&&line[i+1]==='"'){cur+='"';i++;}else q=!q;}else if(ch===','&&!q){out.push(cur.trim());cur='';}else cur+=ch;}out.push(cur.trim());return out;};
+    const hdr=parseLine(lines[0]).map(s=>s.toLowerCase());
+    const idx=PYQ_SUBJ.map(s=>hdr.findIndex(h=>h===s.toLowerCase()));
+    lines.slice(1).forEach(l=>{const c=parseLine(l),y=+c[0];if(!YRS.includes(y))return;W[y]=PYQ_SUBJ.map((_,i)=>idx[i]>=0&&c[idx[i]]!==''?(+c[idx[i]]||0):null);});
+    sv('pqW',W);renderW();$('pqCsvStatus').textContent='CSV imported successfully.';
   };
-  $('pqResetBtn').onclick=()=>{ if(confirm('Clear all PYQ weightage entries?')){ W={}; sv('pqW',W); renderW(); renderSub(); } };
+  $('pqResetBtn').onclick=()=>{ if(confirm('Restore the uploaded 2011–2025 CSV weightage?')){ W=JSON.parse(JSON.stringify(PYQ_CSV_DATA)); sv('pqW',W); renderW(); $('pqCsvStatus').textContent='Restored uploaded CSV data.'; } };
 
+  $('pqCsv').value='Year,Polity,History & Culture,Geography,Economy,Environment & Ecology,Science & Tech,Current Affairs & Misc\n2011,12,11,11,19,15,19,13\n2012,17,17,14,17,17,9,9\n2013,16,15,14,19,17,14,5\n2014,11,17,10,10,18,16,18\n2015,13,14,14,13,11,8,27\n2016,7,15,7,18,18,8,27\n2017,22,14,7,15,11,9,22\n2018,13,21,8,18,13,13,14\n2019,15,15,14,14,21,7,14\n2020,17,20,10,15,10,10,18\n2021,14,20,10,15,15,12,14\n2022,13,16,12,17,17,14,11\n2023,15,14,16,14,14,12,15\n2024,18,11,14,16,14,11,16\n2025,15,14,12,16,15,13,15';
   fillCats(); renderW(); renderSub();
   document.querySelector('.tab[data-view="prelims"]').addEventListener('click',()=>{ renderCharts(); });
 })();
